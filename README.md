@@ -4,7 +4,9 @@
 
 A data-driven breakdown of 62 major cloud outages since 2020 — incident frequency, error-budget burn against real SLAs, and the root causes behind them.
 
-**Live page:** https://alam-cloud.github.io/cloud-outage-frequency/
+**Live page:** https://apj53vkwd8wk9.space.minimax.io
+
+> Prefer a `github.io` URL? Enable GitHub Pages for this repo — **Settings → Pages → Source: Deploy from a branch → `main` / `(root)`** — and the page will also serve at https://alam-cloud.github.io/cloud-outage-frequency/
 
 ---
 
