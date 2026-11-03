@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How Often Do AWS &amp; Azure Regions Fall Over?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#fafafa;
+    --card:#ffffff;
+    --ink:#18181b;
+    --ink-2:#3f3f46;
+    --muted:#71717a;
+    --line:#e4e4e7;
+    --line-soft:#f4f4f5;
+    --aws:#f59e0b;
+    --azure:#3b82f6;
+    --danger:#e34948;
+    --ok:#10b981;
+    --shadow:0 2px 8px rgba(0,0,0,.04);
+    --shadow-lg:0 4px 16px -2px rgba(0,0,0,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Outfit',sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    padding:0 0 80px;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  @media (max-width:768px){ .wrap{padding:0 18px} body{font-size:15px} }
+
+  /* ---------- Hero ---------- */
+  header.hero{padding:64px 0 36px}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin-bottom:20px;
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--danger)}
+  h1{
+    font-size:clamp(30px,5vw,50px);line-height:1.08;font-weight:600;
+    letter-spacing:-.025em;max-width:17ch;
+  }
+  h1 em{font-style:normal;color:var(--muted)}
+  .lede{
+    margin-top:20px;max-width:62ch;font-size:17px;color:var(--ink-2);
+  }
+  .lede strong{color:var(--ink);font-weight:600}
+
+  /* ---------- Stat rail ---------- */
+  .statrail{
+    margin-top:36px;display:grid;grid-template-columns:repeat(4,1fr);
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    overflow:hidden;box-shadow:var(--shadow);
+  }
+  .stat{padding:22px 24px;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:none}
+  .stat .k{
+    font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin-bottom:8px;
+  }
+  .stat .v{font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+  .stat .v small{font-size:15px;font-weight:500;color:var(--muted);letter-spacing:0}
+  .stat .n{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.45}
+  .stat.aws .v{color:var(--aws)}
+  .stat.azure .v{color:var(--azure)}
+  @media (max-width:768px){
+    .statrail{grid-template-columns:repeat(2,1fr)}
+    .stat:nth-child(2){border-right:none}
+    .stat:nth-child(-n+2){border-bottom:1px solid var(--line)}
+    .stat .v{font-size:25px}
+  }
+
+  /* ---------- Sections ---------- */
+  section{padding:52px 0 0}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+  .sec-head h2{font-size:25px;font-weight:600;letter-spacing:-.02em}
+  .sec-head .num{
+    font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);
+    border:1px solid var(--line);border-radius:6px;padding:2px 8px;background:var(--card);
+  }
+  .sec-sub{color:var(--muted);font-size:15px;max-width:74ch;margin-bottom:22px}
+
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:24px;box-shadow:var(--shadow);
+  }
+  @media (max-width:768px){ .panel{padding:18px} }
+
+  .grid-2{display:grid;grid-template-columns:1.35fr 1fr;gap:20px;align-items:start}
+  @media (max-width:900px){ .grid-2{grid-template-columns:1fr} }
+
+  .chart-wrap{position:relative;height:320px}
+  .chart-wrap.tall{height:430px}
+
+  /* ---------- Legend chips ---------- */
+  .chips{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+  .chip i{width:11px;height:11px;border-radius:3px;display:block}
+
+  /* ---------- Bench bars ---------- */
+  .bench{padding:9px 0}
+  .bench-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+  .bench-label{font-size:13px;color:var(--ink-2)}
+  .bench-val{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);font-weight:500;flex:none}
+  .bench-track{height:8px;background:var(--line-soft);border-radius:999px;overflow:hidden}
+  .bench-fill{height:100%;border-radius:999px}
+
+  /* ---------- Timeline ---------- */
+  .lanes{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media (max-width:860px){ .lanes{grid-template-columns:1fr} }
+  .lane-head{
+    display:flex;align-items:center;gap:10px;margin-bottom:16px;
+    padding-bottom:12px;border-bottom:1px solid var(--line);
+  }
+  .lane-head .swatch{width:13px;height:13px;border-radius:4px}
+  .lane-head h3{font-size:17px;font-weight:600;letter-spacing:-.01em}
+  .lane-head .count{
+    margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);
+  }
+  .tl{list-style:none;position:relative;padding:0}
+  .tl::before{content:"";position:absolute;left:5px;top:8px;bottom:8px;width:2px;background:var(--line)}
+  .tl li{position:relative;padding:0 0 22px 26px}
+  .tl li:last-child{padding-bottom:0}
+  .tl li::before{
+    content:"";position:absolute;left:0;top:5px;width:12px;height:12px;border-radius:50%;
+    background:var(--card);border:2px solid var(--line);
+  }
+  .tl li.hot::before{border-color:var(--danger);background:var(--danger)}
+  .tl .date{
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted);
+    letter-spacing:.02em;
+  }
+  .tl .what{font-size:14.5px;font-weight:600;margin-top:1px;letter-spacing:-.005em}
+  .tl .why{font-size:13.5px;color:var(--muted);line-height:1.5;margin-top:3px}
+  .tl .dur{
+    display:inline-block;margin-top:7px;font-family:'JetBrains Mono',monospace;font-size:11.5px;
+    padding:2px 8px;border-radius:999px;background:var(--line-soft);color:var(--ink-2);
+  }
+
+  /* ---------- Callout ---------- */
+  .callout{
+    background:#fefaf9;border:1px solid #f2d6d4;
+    border-radius:14px;padding:24px 26px;box-shadow:var(--shadow);
+  }
+  .callout h3{font-size:18px;font-weight:600;letter-spacing:-.015em;margin-bottom:10px}
+  .callout p{font-size:14.5px;color:var(--ink-2);margin-bottom:10px}
+  .callout p:last-child{margin-bottom:0}
+  .callout .big{
+    font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--danger);
+    font-weight:500;
+  }
+
+  /* ---------- Table ---------- */
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:460px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line-soft)}
+  thead th{
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;border-bottom:1px solid var(--line);
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td.mono,.mono{font-family:'JetBrains Mono',monospace;font-size:12.5px}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:500}
+  .tag.aws{background:rgba(245,158,11,.12);color:#b45309}
+  .tag.azure{background:rgba(59,130,246,.12);color:#1d4ed8}
+
+  /* ---------- Donut legend ---------- */
+  .donut-row{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+  .donut{position:relative;width:160px;height:160px;flex:none}
+  .donut .mid{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+  }
+  .donut .mid b{font-size:32px;font-weight:600;letter-spacing:-.03em;line-height:1}
+  .donut .mid span{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  .legend{flex:1;min-width:230px}
+  .legend-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13.5px}
+  .legend-row i{width:10px;height:10px;border-radius:3px;flex:none}
+  .legend-row .pct{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-2)}
+
+  /* ---------- Lesson ---------- */
+  .lesson{
+    display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start;
+    padding:18px 0;border-top:1px solid var(--line);
+  }
+  .lesson:last-child{border-bottom:1px solid var(--line)}
+  .lesson .ico{
+    width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+    background:var(--line-soft);color:var(--ink-2);flex:none;
+  }
+  .lesson h4{font-size:15.5px;font-weight:600;margin-bottom:4px;letter-spacing:-.01em}
+  .lesson p{font-size:14px;color:var(--muted);line-height:1.55}
+
+  /* ---------- Sources ---------- */
+  footer{margin-top:60px;padding-top:26px;border-top:1px solid var(--line)}
+  footer h4{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:600}
+  footer ul{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px 22px}
+  footer li{font-size:13px;color:var(--muted)}
+  footer a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid var(--line)}
+  footer a:hover{border-color:var(--ink-2)}
+  footer .note{margin-top:20px;font-size:12.5px;color:var(--muted);line-height:1.6;max-width:80ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow"><span class="dot"></span> Resilience exercise · data through Nov 2026</div>
+    <h1>How often do AWS and Azure <em>regions and zones</em> actually fall over?</h1>
+    <p class="lede">
+      Short answer: <strong>two to three times a year each</strong>, at a scale that lasts hours — not seconds.
+      And critically, <strong>spreading across availability zones inside one region does not protect you</strong>.
+      Both providers have had outages where every zone in a region died together because they shared one regional
+      control plane.
+    </p>
+
+    <div class="statrail">
+      <div class="stat aws">
+        <div class="k">AWS</div>
+        <div class="v">14 <small>incidents</small></div>
+        <div class="n">Major, publicly documented events since 2020</div>
+      </div>
+      <div class="stat azure">
+        <div class="k">Azure</div>
+        <div class="v">20 <small>incidents</small></div>
+        <div class="n">Major, publicly documented events since 2020</div>
+      </div>
+      <div class="stat">
+        <div class="k">Median duration</div>
+        <div class="v">~8 <small>hours</small></div>
+        <div class="n">AWS 7h 34m · Azure 8h 17m</div>
+      </div>
+      <div class="stat">
+        <div class="k">Worst single event</div>
+        <div class="v">50 <small>hours</small></div>
+        <div class="n">Azure East US 2, Jan 2025</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ 1. FREQUENCY ============ -->
+  <section>
+    <div class="sec-head"><span class="num">01</span><h2>Frequency: it's roughly a quarterly event</h2></div>
+    <p class="sec-sub">
+      Major documented incidents per year. Note the trend line — both providers are getting <em>worse</em> in
+      recent years, not better, and 2026 is only partway through the calendar.
+    </p>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="chips">
+          <span class="chip"><i style="background:#f59e0b"></i>AWS</span>
+          <span class="chip"><i style="background:#3b82f6"></i>Azure</span>
+        </div>
+        <div class="chart-wrap"><canvas id="freqChart"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">Provider totals since 2020</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Broader events only. Azure publishes more formal post-incident reviews, so its count is inflated by disclosure, not necessarily by unreliability.</p>
+
+        <div class="bench">
+          <div class="bench-top"><span class="bench-label">AWS · major events</span><span class="bench-val">14</span></div>
+          <div class="bench-track"><div class="bench-fill" style="width:70%;background:#f59e0b"></div></div>
+        </div>
+        <div class="bench">
+          <div class="bench-top"><span class="bench-label">Azure · major events</span><span class="bench-val">20</span></div>
+          <div class="bench-track"><div class="bench-fill" style="width:100%;background:#3b82f6"></div></div>
+        </div>
+        <div class="bench">
+          <div class="bench-top"><span class="bench-label">Google Cloud</span><span class="bench-val">12</span></div>
+          <div class="bench-track"><div class="bench-fill" style="width:60%;background:#a1a1aa"></div></div>
+        </div>
+        <div class="bench">
+          <div class="bench-top"><span class="bench-label">Cloudflare</span><span class="bench-val">16</span></div>
+          <div class="bench-track"><div class="bench-fill" style="width:80%;background:#a1a1aa"></div></div>
+        </div>
+
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line-soft)">
+          <div style="font-size:12px;color:var(--muted);line-height:1.6">
+            On a per-service basis the count is far higher: an independent status aggregator
+            detected <strong style="color:var(--ink)">38 AWS service/region outages in 2025 alone</strong>,
+            with <strong style="color:var(--ink)">us-east-1 accounting for the largest share</strong> — it's the
+            oldest, busiest region and hosts control planes for IAM, CloudFront and Route 53.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2. DURATION vs SLA ============ -->
+  <section>
+    <div class="sec-head"><span class="num">02</span><h2>Duration: every one of these blew the SLA budget</h2></div>
+    <p class="sec-sub">
+      Each bar shows how many times the incident consumed the <strong>entire monthly error budget</strong> for a
+      99.99% multi-AZ SLA (4.32 minutes of permitted downtime per month). One bar = one incident.
+    </p>
+
+    <div class="panel">
+      <div class="chart-wrap tall"><canvas id="burnChart"></canvas></div>
+      <p style="font-size:12.5px;color:var(--muted);margin-top:16px;line-height:1.6">
+        The scale is the point. A single bad Tuesday consumed <strong style="color:var(--ink)">17× the entire
+        annual</strong> 99.99% downtime allowance — and the Azure East US 2 event consumed
+        <strong style="color:var(--ink)">57× the annual allowance</strong>. Annual budget at 99.99% is
+        52.6 minutes. The worst event was 3,013.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 3. TIMELINE ============ -->
+  <section>
+    <div class="sec-head"><span class="num">03</span><h2>The repeat offenders</h2></div>
+    <p class="sec-sub">
+      The same handful of regions keeps failing. Note how many of these root causes are
+      <strong>self-inflicted</strong> — a bad change, a bad deploy, a bad automation path — rather than hardware failure.
+    </p>
+
+    <div class="lanes">
+      <div class="panel">
+        <div class="lane-head">
+          <span class="swatch" style="background:#f59e0b"></span>
+          <h3>AWS</h3>
+          <span class="count">us-east-1 leads</span>
+        </div>
+        <ol class="tl">
+          <li class="hot">
+            <div class="date">MAY 7–8, 2026</div>
+            <div class="what">us-east-1 · one AZ</div>
+            <div class="why">Thermal event in a data centre — cooling failure caused power loss and servers shut down to protect themselves. Took out EC2, EBS, ELB, EKS, ElastiCache, Redshift, MSK and NAT Gateway.</div>
+            <span class="dur">21h 30m</span>
+          </li>
+          <li class="hot">
+            <div class="date">OCT 19–20, 2025</div>
+            <div class="what">us-east-1 · full region</div>
+            <div class="why">A race condition in DynamoDB's DNS automation left the regional endpoint with an <strong style="color:var(--ink)">empty DNS record</strong>. Cascade: EC2 launches failed for 8 hours, NLB health checks pulled healthy capacity out of service. 140+ services affected, 17M Downdetector reports.</div>
+            <span class="dur">14h 32m</span>
+          </li>
+          <li>
+            <div class="date">OCT 28, 2025</div>
+            <div class="what">us-east-1 · full region</div>
+            <div class="why">Higher EC2 launch latency in one AZ and impaired ECS cells. AWS did not state a root cause.</div>
+            <span class="dur">13h 43m</span>
+          </li>
+          <li>
+            <div class="date">JUL 30, 2024</div>
+            <div class="what">us-east-1 · full region</div>
+            <div class="why">A new Kinesis cell-management system mishandled a cell with many low-throughput shards, marking healthy hosts unhealthy and overloading connection provisioning.</div>
+            <span class="dur">6h 52m</span>
+          </li>
+          <li>
+            <div class="date">DEC 7, 2021</div>
+            <div class="what">us-east-1 · full region</div>
+            <div class="why">Automated capacity scaling triggered a "thundering herd" of retries that overwhelmed AWS's own internal network. Broke EC2 APIs, Route 53 APIs, Console, STS, API Gateway, EventBridge, ECS.</div>
+            <span class="dur">11h 10m</span>
+          </li>
+          <li>
+            <div class="date">SEP 26–27, 2021</div>
+            <div class="what">us-east-1 · one AZ</div>
+            <div class="why">Resource contention degraded the EBS subsystem coordinating storage hosts, leaving I/O stuck. A clean, textbook single-zone failure.</div>
+            <span class="dur">7h 34m</span>
+          </li>
+        </ol>
+      </div>
+
+      <div class="panel">
+        <div class="lane-head">
+          <span class="swatch" style="background:#3b82f6"></span>
+          <h3>Azure</h3>
+          <span class="count">East US 2 leads</span>
+        </div>
+        <ol class="tl">
+          <li class="hot">
+            <div class="date">JAN 8–11, 2025</div>
+            <div class="what">East US 2 · zone</div>
+            <div class="why">An availability-zone networking failure caused by a network configuration change. While enabling a feature, networking PubSub replicas were recycled in parallel — breaking quorum and losing index data. <strong style="color:var(--ink)">Longest event in the dataset.</strong></div>
+            <span class="dur">50h 13m</span>
+          </li>
+          <li>
+            <div class="date">JUL 18–19, 2024</div>
+            <div class="what">Central US · region</div>
+            <div class="why">An incomplete storage allow list was published region-wide, so storage rejected disk I/O from many VM hosts. A config change taking out a whole region.</div>
+            <span class="dur">24h 20m</span>
+          </li>
+          <li>
+            <div class="date">SEP 26–27, 2025</div>
+            <div class="what">Switzerland North · region</div>
+            <div class="why">A malformed certificate in a load balancer config change was pushed to all zones at once through an expedited path. Many customers were back in 4h 06m.</div>
+            <span class="dur">22h 05m</span>
+          </li>
+          <li>
+            <div class="date">MAY 29–30, 2026</div>
+            <div class="what">West US 2 · two zones</div>
+            <div class="why">Lightning-driven voltage swings locked out cooling systems; rising heat forced infrastructure shutdowns across two zones.</div>
+            <span class="dur">22h 06m</span>
+          </li>
+          <li>
+            <div class="date">FEB 7–8, 2026</div>
+            <div class="what">West US · region</div>
+            <div class="why">A transformer failure cut utility power, and a control-system fault blocked the automatic transfer to generator power. UPS batteries drained. Storage and compute didn't recover immediately even after power was restored.</div>
+            <span class="dur">20h 26m</span>
+          </li>
+          <li class="hot">
+            <div class="date">OCT 29–30, 2025</div>
+            <div class="what">Global · Azure Front Door</div>
+            <div class="why">Customer configuration changes processed across two control-plane versions produced incompatible metadata that crashed Front Door edge servers <strong style="color:var(--ink)">worldwide</strong>. Teams, Outlook, Xbox, Copilot, the Azure portal and Entra ID all went down.</div>
+            <span class="dur">8h 24m</span>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4. ROOT CAUSE ============ -->
+  <section>
+    <div class="sec-head"><span class="num">04</span><h2>Why they fail</h2></div>
+    <p class="sec-sub">
+      This is the bit that should change your design priorities: the majority of major cloud outages are caused
+      by <strong>software and change management</strong>, not by hardware dying.
+    </p>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="donut-row">
+          <div class="donut">
+            <canvas id="causeChart"></canvas>
+            <div class="mid"><b>55%</b><span>change or code</span></div>
+          </div>
+          <div class="legend">
+            <div class="legend-row"><i style="background:#f59e0b"></i>Configuration or deployment change<span class="pct">change</span></div>
+            <div class="legend-row"><i style="background:#fb923c"></i>Software bug or automation<span class="pct">code</span></div>
+            <div class="legend-row"><i style="background:#3b82f6"></i>Network<span class="pct">other</span></div>
+            <div class="legend-row"><i style="background:#10b981"></i>Power or cooling<span class="pct">other</span></div>
+            <div class="legend-row"><i style="background:#8b5cf6"></i>Capacity or overload<span class="pct">other</span></div>
+            <div class="legend-row"><i style="background:#a1a1aa"></i>Physical damage, DNS, third-party, unstated<span class="pct">other</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 style="font-size:15px;font-weight:600;margin-bottom:14px">The pattern across every incident</h3>
+        <div style="font-size:14px;color:var(--ink-2);line-height:1.65">
+          <p style="margin-bottom:12px">
+            Look at the root causes in the timeline above and they cluster into four buckets:
+          </p>
+          <ul style="list-style:none;padding-left:0">
+            <li style="padding:6px 0;border-bottom:1px solid var(--line-soft)">
+              <strong style="color:var(--ink)">A change went wrong</strong> — an incomplete allow list, a malformed
+              cert, a routing removal, metadata written across two control-plane versions.
+            </li>
+            <li style="padding:6px 0;border-bottom:1px solid var(--line-soft)">
+              <strong style="color:var(--ink)">Automation had a latent path</strong> — DNS planner races, Kinesis cell
+              management, thundering-herd retry storms, expedited rollouts that skip validation.
+            </li>
+            <li style="padding:6px 0;border-bottom:1px solid var(--line-soft)">
+              <strong style="color:var(--ink)">Physical infrastructure</strong> — lightning, transformers, cooling
+              loops, generators that didn't take over when they should.
+            </li>
+            <li style="padding:6px 0">
+              <strong style="color:var(--ink)">Shared dependencies</strong> — one regional control plane serving
+              every zone in the region, which is how a "zone" event becomes a "region" event.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 5. SLA REALITY ============ -->
+  <section>
+    <div class="sec-head"><span class="num">05</span><h2>The SLA maths — what the credit is actually worth</h2></div>
+    <p class="sec-sub">
+      Both providers promise 99.99% for multi-AZ compute. That is a real commitment. But the remedy attached to it
+      is a percentage of your bill, and that's where the maths gets uncomfortable.
+    </p>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3 style="font-size:15px;font-weight:600;margin-bottom:14px">Compute SLA tiers</h3>
+        <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Deployment</th><th>Uptime</th><th>Down / month</th><th>Down / year</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag aws">AWS</span> EC2 across 2+ AZs</td>
+              <td class="mono">99.99%</td><td class="mono">4.32 min</td><td class="mono">52.6 min</td>
+            </tr>
+            <tr>
+              <td><span class="tag aws">AWS</span> RDS Multi-AZ</td>
+              <td class="mono">99.95%</td><td class="mono">21.6 min</td><td class="mono">4.4 h</td>
+            </tr>
+            <tr>
+              <td><span class="tag aws">AWS</span> single EC2 instance</td>
+              <td class="mono">99.5%</td><td class="mono">216 min</td><td class="mono">43.2 h</td>
+            </tr>
+            <tr>
+              <td><span class="tag azure">Azure</span> 2+ VMs across 2+ AZs</td>
+              <td class="mono">99.99%</td><td class="mono">4.32 min</td><td class="mono">52.6 min</td>
+            </tr>
+            <tr>
+              <td><span class="tag azure">Azure</span> 2+ VMs in an availability set</td>
+              <td class="mono">99.95%</td><td class="mono">21.6 min</td><td class="mono">4.4 h</td>
+            </tr>
+            <tr>
+              <td><span class="tag azure">Azure</span> single VM, Premium SSD</td>
+              <td class="mono">99.9%</td><td class="mono">43.2 min</td><td class="mono">8.8 h</td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin-top:14px;line-height:1.6">
+          Note the AWS single-instance tier is 99.5% and Azure's single-VM tier varies by disk class
+          (99.9% Premium / 99.5% Standard SSD / 95% Standard HDD). Architecture decides which SLA you can
+          actually claim.
+        </p>
+      </div>
+
+      <div class="callout">
+        <h3>The credit doesn't cover the outage</h3>
+        <p>
+          Take the AWS us-east-1 event of October 2025: 15 hours of downtime in a 720-hour month is
+          <strong>97.9% uptime</strong>, which lands in the "below 99.0%" tier — a
+          <strong>30% service credit</strong> on your EC2 charges.
+        </p>
+        <p>
+          On a <span class="mono">$5,000/month</span> EC2 bill that's a <span class="big">$1,500</span> credit,
+          applied to future invoices, which you have to claim manually within two billing cycles.
+        </p>
+        <p>
+          Meanwhile New Relic's 2026 Observability Forecast puts the average high-impact business outage at
+          <span class="big">$1.85M per hour</span> — roughly <strong>$27.7M</strong> over those 15 hours.
+        </p>
+        <p style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)">
+          The credit covers roughly <strong>1/18,500th</strong> of the loss. SLA credits are a service gesture,
+          not insurance. Model your outage cost separately or budget it as uninsured risk.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6. LESSONS ============ -->
+  <section>
+    <div class="sec-head"><span class="num">06</span><h2>What this means for your architecture</h2></div>
+    <p class="sec-sub">Four conclusions that come straight out of the incident data.</p>
+
+    <div class="panel">
+      <div class="lesson">
+        <div class="ico">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/></svg>
+        </div>
+        <div>
+          <h4>Multi-AZ inside one region is not regional resilience</h4>
+          <p>In October 2025, teams that had spread replicas across availability zones still went down — every zone in us-east-1 depended on the same regional endpoint. And in Azure's 2025 multi-region events, the Uptime Institute found that even where regional failover had been planned, application downtime still occurred. Cross-region is the only real answer to a regional control-plane failure.</p>
+        </div>
+      </div>
+
+      <div class="lesson">
+        <div class="ico">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v6h-6"/></svg>
+        </div>
+        <div>
+          <h4>Failover has to be automatic, or it doesn't exist</h4>
+          <p>A 50-hour recovery on Azure East US 2 was mostly the system failing to fail back cleanly, not the initial failure. If your runbook needs a human, a human is on holiday in week one of an outage. Test failover continuously, and test the DNS/control-plane dependencies your failover path shares with the thing it's failing over from.</p>
+        </div>
+      </div>
+
+      <div class="lesson">
+        <div class="ico">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div>
+          <h4>Assume the shared dependency is the failure domain</h4>
+          <p>DynamoDB's DNS taking down EC2 launches. Route 53's API down with the console. Front Door metadata crashing edge servers globally. The thing you depend on is probably a control plane inside the same region. Enumerate those dependencies explicitly — including your own DNS, your identity provider and your CI/CD — and treat each as a single point of failure.</p>
+        </div>
+      </div>
+
+      <div class="lesson">
+        <div class="ico">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        </div>
+        <div>
+          <h4>Watch your error budget as a financial instrument</h4>
+          <p>99.99% is 4.32 minutes a month — one bad deploy. A 15-hour regional outage is 17× the entire annual allowance. Track provider-caused downtime in the same error-budget ledger as your own changes; if the provider burns your budget, you should know before the invoice and the SLA claim do.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <h4>Sources</h4>
+    <ul>
+      <li><a href="https://controlplane.com/cloud-outage-tracker" target="_blank" rel="noopener">Control Plane Cloud Outage Tracker</a> — 62 major incidents since 2020</li>
+      <li><a href="https://aws.amazon.com/premiumsupport/technology/pes/" target="_blank" rel="noopener">AWS Post-Event Summaries</a> — us-east-1 Oct 2025, Kinesis Jul 2024, Dec 2021</li>
+      <li><a href="https://aws.amazon.com/compute/sla/" target="_blank" rel="noopener">Amazon EC2 SLA</a></li>
+      <li><a href="https://azure.microsoft.com/en-us/support/legal/sla/virtual-machines/v1_9/" target="_blank" rel="noopener">Azure Virtual Machines SLA</a></li>
+      <li><a href="https://azure.status.microsoft/en-us/status/history/" target="_blank" rel="noopener">Azure status history &amp; PIRs</a></li>
+      <li><a href="https://intelligence.uptimeinstitute.com/entity_pdf/node/156341/pdf" target="_blank" rel="noopener">Uptime Institute Annual Outage Analysis 2026</a></li>
+      <li><a href="https://newrelic.com/resources/report/observability-forecast/2026" target="_blank" rel="noopener">New Relic 2026 Observability Forecast</a></li>
+      <li><a href="https://blog.incidenthub.cloud/definitive-aws-outage-report-2025-reliability" target="_blank" rel="noopener">IncidentHub — AWS outages 2025</a></li>
+    </ul>
+    <p class="note">
+      Incident counts reflect what each provider publicly documents, not a head-to-head reliability ranking —
+      Microsoft publishes post-incident reviews for more incidents than the others. Durations are provider-stated
+      and represent worst-case service impact, not every customer's experience. The "budget burn" figure divides
+      each incident's duration by 4.32 minutes, the monthly downtime allowance implied by a 99.99% SLA.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+const AWS = '#f59e0b';
+const AZURE = '#3b82f6';
+const INK = '#18181b';
+const MUTED = '#71717a';
+const LINE = 'rgba(0,0,0,.06)';
+
+Chart.defaults.font.family = "'Outfit', sans-serif";
+Chart.defaults.color = MUTED;
+Chart.defaults.font.size = 12;
+
+const tooltipStyle = {
+  backgroundColor: '#18181b',
+  titleFont: {family:"'Outfit', sans-serif", weight:'600', size:13},
+  bodyFont: {family:"'JetBrains Mono', monospace", size:12},
+  padding: 10,
+  cornerRadius: 8,
+  displayColors: true,
+  boxWidth: 10,
+  boxHeight: 10,
+  boxPadding: 4
+};
+
+/* ---- 1. Frequency per year ---- */
+const years = ['2020','2021','2022','2023','2024','2025','2026*'];
+new Chart(document.getElementById('freqChart'), {
+  type: 'bar',
+  data: {
+    labels: years,
+    datasets: [
+      {label:'AWS', data:[1,5,0,1,1,2,4], backgroundColor:AWS, borderRadius:6, maxBarThickness:26},
+      {label:'Azure', data:[1,3,0,2,4,4,6], backgroundColor:AZURE, borderRadius:6, maxBarThickness:26}
+    ]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{...tooltipStyle, callbacks:{footer: items => 'Total this year: ' + items.reduce((s,i)=>s+i.parsed.y,0)}}
+    },
+    scales:{
+      x:{grid:{display:false}, border:{color:LINE}, ticks:{font:{size:11.5}}},
+      y:{beginAtZero:true, grid:{color:LINE}, border:{display:false},
+         ticks:{stepSize:1, precision:0, font:{size:11.5}},
+         title:{display:true, text:'major incidents', font:{size:11}, color:MUTED}}
+    }
+  }
+});
+
+/* ---- 2. Error-budget burn ---- */
+const burnRows = [
+  ['Jan 2025 · Azure East US 2', '50h 13m', 697],
+  ['Apr 2023 · Azure Central US', '27h 14m', 378],
+  ['Jul 2024 · Azure Central US', '24h 20m', 338],
+  ['Sep 2025 · Azure Switzerland North', '22h 05m', 307],
+  ['May 2026 · Azure West US 2', '22h 06m', 307],
+  ['May 2026 · AWS us-east-1 (1 AZ)', '21h 30m', 299],
+  ['Feb 2026 · Azure West US', '20h 26m', 284],
+  ['Oct 2025 · AWS us-east-1', '14h 32m', 202],
+  ['Oct 2025 · AWS us-east-1', '13h 43m', 190],
+  ['Dec 2021 · AWS us-east-1', '11h 10m', 155],
+  ['Oct 2025 · Azure Front Door', '8h 24m', 117],
+  ['Oct 2025 · Azure Front Door', '8h 10m', 113],
+  ['Sep 2021 · AWS us-east-1 (1 AZ)', '7h 34m', 105],
+  ['Jul 2024 · AWS us-east-1', '6h 52m', 95],
+  ['Jul 2026 · Azure West US', '4h 57m', 69],
+  ['Jun 2023 · AWS us-east-1', '3h 51m', 53]
+];
+const burnLabels = burnRows.map(r => r[0] + ' · ' + r[1]);
+const burnDur   = burnRows.map(r => r[1]);
+const burnData  = burnRows.map(r => r[2]);
+const burnColors = burnRows.map(r => r[0].includes('AWS') ? AWS : AZURE);
+
+new Chart(document.getElementById('burnChart'), {
+  type: 'bar',
+  data: {
+    labels: burnLabels,
+    datasets:[{label:'× monthly budget', data:burnData, backgroundColor:burnColors, borderRadius:6, maxBarThickness:18}]
+  },
+  options: {
+    indexAxis:'y',
+    responsive:true, maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{
+        ...tooltipStyle,
+        callbacks:{
+          title: items => items[0].label,
+          label: item => {
+            const i = item.dataIndex;
+            return [
+              'Duration: ' + burnDur[i],
+              'Budget burned: ' + item.parsed.x + '× (4.32 min monthly)',
+              'Downtime: ' + (item.parsed.x*4.32/60).toFixed(1) + ' h'
+            ];
+          }
+        }
+      }
+    },
+    scales:{
+      x:{beginAtZero:true, grid:{color:LINE}, border:{display:false},
+         ticks:{font:{size:11.5}},
+         title:{display:true, text:'times the entire monthly 99.99% error budget was consumed', font:{size:11}, color:MUTED}},
+      y:{grid:{display:false}, border:{color:LINE}, ticks:{font:{size:10.5}, color:INK}}
+    }
+  }
+});
+
+/* ---- 3. Root cause donut ---- */
+new Chart(document.getElementById('causeChart'), {
+  type: 'doughnut',
+  data: {
+    labels:['Started with a change or code','Everything else'],
+    datasets:[{
+      data:[55,45],
+      backgroundColor:[AWS,'#e4e4e7'],
+      borderWidth:0,
+      hoverOffset:4
+    }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false, cutout:'72%',
+    plugins:{
+      legend:{display:false},
+      tooltip:{...tooltipStyle, callbacks:{label: i => i.label + ': ' + i.parsed + '%'}}
+    }
+  }
+});
+</script>
+</body>
+</html>
