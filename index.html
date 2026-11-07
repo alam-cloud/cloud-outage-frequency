@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>How Often Do AWS, Azure &amp; GCP Regions Fall Over?</title>
-<meta name="description" content="62 major cloud outages since 2020 across AWS, Azure and Google Cloud — frequency, error-budget burn, root causes, SLI/SLO theory, and exactly how each incident was resolved." />
+<title>How Often Do AWS, Azure, GCP &amp; Cloudflare Fall Over?</title>
+<meta name="description" content="62 major cloud outages since 2020 across AWS, Azure, Google Cloud and Cloudflare — frequency, error-budget burn, root causes, SLI/SLO theory, control plane vs data plane, and exactly how each incident was resolved." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -21,6 +21,7 @@
     --aws:#f59e0b;
     --azure:#3b82f6;
     --gcp:#10b981;
+    --cf:#db2777;
     --accent:#6366f1;
     --danger:#e34948;
     --ok:#10b981;
@@ -61,23 +62,31 @@
   .lede strong{color:var(--ink);font-weight:600}
 
   .statrail{
-    margin-top:38px;display:grid;grid-template-columns:repeat(5,1fr);
+    margin-top:38px;display:grid;grid-template-columns:repeat(6,1fr);
     background:var(--card);border:1px solid var(--line);border-radius:16px;
     overflow:hidden;box-shadow:var(--shadow);
   }
-  .stat{padding:20px 20px;border-right:1px solid var(--line);min-width:0}
+  .stat{padding:19px 17px;border-right:1px solid var(--line);min-width:0}
   .stat:last-child{border-right:none}
   .stat .k{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.35}
   .stat .k i{width:8px;height:8px;border-radius:2.5px;display:block;flex:none}
-  .stat .v{font-size:29px;font-weight:600;letter-spacing:-.025em;line-height:1.05}
-  .stat .v small{font-size:14px;font-weight:500;color:var(--muted);letter-spacing:0}
-  .stat .n{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.45}
-  @media (max-width:900px){
+  .stat .v{font-size:27px;font-weight:600;letter-spacing:-.025em;line-height:1.05}
+  .stat .v small{font-size:13.5px;font-weight:500;color:var(--muted);letter-spacing:0}
+  .stat .n{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.45}
+  @media (max-width:1080px){
+    .statrail{grid-template-columns:repeat(3,1fr)}
+    .stat{border-bottom:1px solid var(--line)}
+    .stat:nth-child(3n){border-right:none}
+    .stat:nth-last-child(-n+3){border-bottom:none}
+  }
+  @media (max-width:700px){
     .statrail{grid-template-columns:repeat(2,1fr)}
     .stat{border-bottom:1px solid var(--line)}
+    .stat:nth-child(3n){border-right:1px solid var(--line)}
     .stat:nth-child(2n){border-right:none}
-    .stat:nth-last-child(-n+1){border-bottom:none}
-    .stat .v{font-size:25px}
+    .stat:nth-last-child(-n+3){border-bottom:1px solid var(--line)}
+    .stat:nth-last-child(-n+2){border-bottom:none}
+    .stat .v{font-size:24px}
   }
 
   /* ============ SECTIONS ============ */
@@ -95,12 +104,19 @@
   @media (max-width:940px){ .grid-2,.grid-3{grid-template-columns:1fr} }
 
   .chart-wrap{position:relative;height:330px}
-  .chart-wrap.tall{height:520px}
+  .chart-wrap.tall{height:760px;transition:height .28s ease}
   .chart-wrap.mid{height:400px}
 
-  .chips{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+  .chips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+  .chips .lead{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:2px}
   .chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2)}
-  .chip i{width:10px;height:10px;border-radius:3px;display:block}
+  .chip i{width:10px;height:10px;border-radius:3px;display:block;flex:none}
+  button.chip{
+    font-family:inherit;padding:5px 12px;border:1px solid var(--line);border-radius:999px;
+    background:var(--card);cursor:pointer;transition:all .16s ease;
+  }
+  button.chip:hover{border-color:var(--ink-2);color:var(--ink)}
+  button.chip.on{border-color:var(--ink);color:var(--ink);font-weight:600;background:var(--bg)}
 
   /* bench bars */
   .bench{padding:9px 0}
@@ -135,6 +151,7 @@
   .pill.aws{background:rgba(245,158,11,.14);color:#b45309}
   .pill.azure{background:rgba(59,130,246,.14);color:#1d4ed8}
   .pill.gcp{background:rgba(16,185,129,.14);color:#047857}
+  .pill.cf{background:rgba(219,39,119,.13);color:#9d174d}
   .pill.hot{background:rgba(227,73,72,.13);color:#b42318}
   .pill.ok{background:rgba(16,185,129,.13);color:#047857}
 
@@ -297,19 +314,21 @@
 <div class="wrap">
 
 <header class="hero">
-  <div class="eyebrow"><span class="dot"></span> Resilience deep-dive · 62 major outages · data through Nov 2026</div>
-  <h1>How often do AWS, Azure and GCP <em>regions and zones</em> actually fall over?</h1>
+  <div class="eyebrow"><span class="dot"></span> Resilience deep-dive · 62 major outages · 4 providers · data through Nov 2026</div>
+  <h1>How often do AWS, Azure, GCP and Cloudflare <em>actually</em> fall over?</h1>
   <p class="lede">
-    Two to three times a year each, lasting hours rather than seconds. This is the full picture: incident frequency,
-    the <strong>SLI → SLO → error budget</strong> maths behind why multi-AZ isn't enough, exactly <strong>how each
-    incident was resolved</strong> step by step, and what the providers changed afterwards so it can't repeat.
+    Two to three times a year each, lasting hours rather than seconds. Across 62 major incidents at AWS, Azure, Google Cloud
+    and Cloudflare: the frequency, the <strong>SLI → SLO → error budget</strong> maths behind why multi-AZ isn't enough,
+    exactly <strong>how each incident was resolved</strong> step by step — and the one architectural decision that decides
+    whether a control-plane failure takes your traffic down with it.
   </p>
 
   <div class="statrail">
     <div class="stat"><div class="k"><i style="background:#f59e0b"></i>AWS</div><div class="v">14 <small>outages</small></div><div class="n">9 of them in us-east-1</div></div>
     <div class="stat"><div class="k"><i style="background:#3b82f6"></i>Azure</div><div class="v">20 <small>outages</small></div><div class="n">Most formal PIRs published</div></div>
     <div class="stat"><div class="k"><i style="background:#10b981"></i>Google Cloud</div><div class="v">12 <small>outages</small></div><div class="n">Cleanest published RCA</div></div>
-    <div class="stat"><div class="k">Median duration</div><div class="v">~8 <small>hours</small></div><div class="n">AWS 7h34m · Azure 8h17m · GCP 7h27m</div></div>
+    <div class="stat"><div class="k"><i style="background:#db2777"></i>Cloudflare</div><div class="v">16 <small>outages</small></div><div class="n">Short, but usually global</div></div>
+    <div class="stat"><div class="k">Median duration</div><div class="v">6h 08m</div><div class="n">CF 1h15m · GCP 6h08m · AWS 7h34m · Azure 8h17m</div></div>
     <div class="stat"><div class="k">Change or code</div><div class="v">55<small>%</small></div><div class="n">32% config · 23% software bug</div></div>
   </div>
 </header>
@@ -329,6 +348,7 @@
         <span class="chip"><i style="background:#f59e0b"></i>AWS</span>
         <span class="chip"><i style="background:#3b82f6"></i>Azure</span>
         <span class="chip"><i style="background:#10b981"></i>Google Cloud</span>
+        <span class="chip"><i style="background:#db2777"></i>Cloudflare</span>
       </div>
       <div class="chart-wrap"><canvas id="freqChart"></canvas></div>
     </div>
@@ -342,16 +362,16 @@
         <div class="bench-track"><div class="bench-fill" style="width:100%;background:#3b82f6"></div></div>
       </div>
       <div class="bench">
+        <div class="bench-top"><span class="bench-label">Cloudflare · major events</span><span class="bench-val">16</span></div>
+        <div class="bench-track"><div class="bench-fill" style="width:80%;background:#db2777"></div></div>
+      </div>
+      <div class="bench">
         <div class="bench-top"><span class="bench-label">AWS · major events</span><span class="bench-val">14</span></div>
         <div class="bench-track"><div class="bench-fill" style="width:70%;background:#f59e0b"></div></div>
       </div>
       <div class="bench">
         <div class="bench-top"><span class="bench-label">Google Cloud</span><span class="bench-val">12</span></div>
         <div class="bench-track"><div class="bench-fill" style="width:60%;background:#10b981"></div></div>
-      </div>
-      <div class="bench">
-        <div class="bench-top"><span class="bench-label">Cloudflare</span><span class="bench-val">16</span></div>
-        <div class="bench-track"><div class="bench-fill" style="width:80%;background:#a1a1aa"></div></div>
       </div>
 
       <div style="margin-top:18px;padding-top:15px;border-top:1px solid var(--line-soft)">
@@ -360,7 +380,8 @@
           <strong style="color:var(--ink-2)">us-east-1</strong> — 9 of AWS's 14<br>
           <strong style="color:var(--ink-2)">East US 2</strong> — Azure's worst (50h 13m)<br>
           <strong style="color:var(--ink-2)">europe-west2 / west3</strong> — GCP's London and Frankfurt<br>
-          <strong style="color:var(--ink-2)">West US 2</strong> — Azure, twice in 2026 alone
+          <strong style="color:var(--ink-2)">West US 2</strong> — Azure, twice in 2026 alone<br>
+          <strong style="color:var(--ink-2)">Global</strong> — Cloudflare's usual blast radius
         </div>
       </div>
     </div>
@@ -498,11 +519,25 @@ time_to_exhaustion = slo_period / burn_rate
   </p>
 
   <div class="panel">
-    <div class="chart-wrap tall"><canvas id="burnChart"></canvas></div>
+    <div class="chips" id="burnFilter">
+      <span class="lead">Filter</span>
+      <button class="chip on" data-f="all">All four providers</button>
+      <button class="chip" data-f="aws"><i style="background:#f59e0b"></i>AWS</button>
+      <button class="chip" data-f="azure"><i style="background:#3b82f6"></i>Azure</button>
+      <button class="chip" data-f="gcp"><i style="background:#10b981"></i>Google Cloud</button>
+      <button class="chip" data-f="cf"><i style="background:#db2777"></i>Cloudflare</button>
+    </div>
+    <div class="chart-wrap tall" id="burnWrap"><canvas id="burnChart"></canvas></div>
     <p style="font-size:12.8px;color:var(--muted);margin-top:16px;line-height:1.65">
       The scale is the point. A single bad Tuesday consumed <strong style="color:var(--ink)">17× the entire annual</strong> 99.99%
       allowance — and Azure's East US 2 event consumed <strong style="color:var(--ink)">57× the annual allowance</strong>. The annual
-      budget at 99.99% is 52.6 minutes. The worst event was 3,013.
+      budget at 99.99% is 52.6 minutes. The worst event was 3,013 minutes.
+    </p>
+    <p style="font-size:12.8px;color:var(--muted);margin-top:11px;line-height:1.65">
+      Notice the shape of Cloudflare's bars. Nine of its fifteen charted incidents fit <em>inside</em> a single multi-AZ monthly
+      error budget — which no hyperscaler incident in this dataset does. Its two largest, though, are the kind of numbers you
+      build a runbook for: the Hillsboro control-plane failure burned <strong style="color:var(--ink)">565× a full month's
+      budget</strong> in one go.
     </p>
   </div>
 
@@ -510,7 +545,7 @@ time_to_exhaustion = slo_period / burn_rate
     <h3 style="font-size:17px;font-weight:600;letter-spacing:-.015em;margin-bottom:5px">Your stack's error budget</h3>
     <p style="font-size:13.5px;color:var(--muted);margin-bottom:20px;max-width:84ch">
       Pick an architecture, then adjust each dependency's real availability. The composed availability is the <em>product</em> of every
-      layer — the single most commonly skipped piece of maths in reliability work. Then see how many of the 24 incidents on this page
+      layer — the single most commonly skipped piece of maths in reliability work. Then see how many of the 39 incidents on this page
       your error budget would have survived.
     </p>
 
@@ -534,7 +569,7 @@ error_budget_minutes = (1 − composed) × 43,200
         <div class="out-box">
           <div class="k">Composed availability</div>
           <div class="v" id="calcAvail">—</div>
-          <div class="n" id="calcAvailNote">product of all four dependencies</div>
+          <div class="n" id="calcAvailNote">product of all five dependencies</div>
         </div>
         <div class="out-box">
           <div class="k">Error budget</div>
@@ -544,7 +579,7 @@ error_budget_minutes = (1 − composed) × 43,200
         <div class="out-box" id="calcImpactBox">
           <div class="k">Historical incidents that would blow this budget</div>
           <div class="v" id="calcImpact">—</div>
-          <div class="n" id="calcImpactNote">of the 24 incidents charted above</div>
+          <div class="n" id="calcImpactNote">of the 39 incidents charted above</div>
         </div>
         <div class="out-box" id="calcWorstBox">
           <div class="k">Worst case in this dataset</div>
@@ -552,6 +587,16 @@ error_budget_minutes = (1 − composed) × 43,200
           <div class="n" id="calcWorstNote"></div>
         </div>
       </div>
+    </div>
+
+    <div class="note" style="margin-top:20px">
+      <h3 style="font-size:16px">Why the CDN row matters more than it looks</h3>
+      <p>
+        Cloudflare's contractual commitment is <strong>100% uptime</strong> for Business and Enterprise plans, with credits
+        scaled to how much of your traffic was affected — a stronger promise than the 99.99% on every row above it. It is
+        also <em>a credit, not an availability guarantee</em>. Put a CDN in front of a single-zone origin and the composed
+        number barely moves: the CDN cannot protect the origin it is caching.
+      </p>
     </div>
   </div>
 </section>
@@ -602,9 +647,78 @@ error_budget_minutes = (1 − composed) × 43,200
   </div>
 </section>
 
-<!-- ============ 05 RESOLUTIONS ============ -->
+<!-- ============ 05 CONTROL PLANE vs DATA PLANE ============ -->
+<section id="controlplane">
+  <div class="sec-head"><span class="num">05</span><h2>Cloudflare breaks the pattern: the control plane is not the data plane</h2></div>
+  <p class="sec-sub">
+    Cloudflare's 16 incidents have a median duration of <strong>1 hour 15 minutes</strong> — by far the shortest of any provider
+    in this dataset — yet <strong>11 of them are labelled global</strong> in the tracker. Short and wide is the opposite of the
+    hyperscalers' failure mode: regional, but slow. The reason is architectural. Cloudflare's edge network and its
+    API/dashboard are separate systems with separate failure domains, and the clearest proof in the whole dataset is
+    Hillsboro, Oregon in November 2023, where the control plane was dark for <strong>40 hours 42 minutes</strong> and the edge
+    never dropped customer traffic.
+  </p>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:5px">Short but global, or regional but slow</h3>
+      <p style="font-size:12.8px;color:var(--muted);margin-bottom:15px">Every incident in the tracker since 2020, by provider.</p>
+      <div class="table-scroll">
+        <table style="min-width:600px">
+          <thead><tr><th>Provider</th><th>Incidents</th><th>Median</th><th>Mean</th><th>Longest</th><th>Usual blast radius</th></tr></thead>
+          <tbody>
+            <tr><td><span class="pill aws">AWS</span></td><td class="mono">14</td><td class="mono">7h 34m</td><td class="mono">9h 32m</td><td class="mono">21h 30m</td><td>One region, often one zone</td></tr>
+            <tr><td><span class="pill azure">AZ</span></td><td class="mono">20</td><td class="mono">8h 17m</td><td class="mono">13h 35m</td><td class="mono">50h 13m</td><td>Region, or global (Front Door)</td></tr>
+            <tr><td><span class="pill gcp">GCP</span></td><td class="mono">12</td><td class="mono">6h 08m</td><td class="mono">11h 32m</td><td class="mono">27h 14m</td><td>Zone, sometimes the region</td></tr>
+            <tr><td><span class="pill cf">CF</span></td><td class="mono">16</td><td class="mono">1h 15m</td><td class="mono">4h 35m</td><td class="mono">40h 42m</td><td>Usually global</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note" style="margin-top:18px">
+        <h3 style="font-size:15px">This is not "Cloudflare is more reliable"</h3>
+        <p>
+          Cloudflare's median is more than <strong>six times shorter</strong> than Azure's, and its mean is a third of Azure's.
+          Yet it contributes <strong>11 of the 31 incidents</strong> in the entire dataset that hit more than one region or a
+          global service — more than any other provider.
+        </p>
+        <p>
+          The lesson is not about the provider, it is about <strong>which failure domain you have put your traffic in</strong>.
+          Azure Front Door shows the opposite failure: its control plane and data plane were tightly coupled, so a metadata
+          defect on the control plane took the global edge down with it for eight hours. The same class of bug, in an
+          architecture with separated planes, would have cost you a dashboard.
+        </p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:4px">Hillsboro, Oregon · 2–4 November 2023</h3>
+      <p style="font-size:12.8px;color:var(--muted);margin-bottom:14px">40h 42m total, and the edge kept serving traffic throughout.</p>
+      <ol class="tl">
+        <li><div class="time">08:50 · NOV 2</div><div class="what">Utility maintenance on one feed</div><div class="why">Portland General Electric begins work on one of the two utility feeds serving the site.</div></li>
+        <li class="hot"><div class="time">11:40</div><div class="what">Ground fault</div><div class="why">A ground fault takes out the remaining feed.</div></li>
+        <li class="hot"><div class="time">11:43</div><div class="what">Power lost</div><div class="why">The data centre hosting control-plane services that sat outside the high-availability cluster goes dark.</div></li>
+        <li class="hot"><div class="time">12:48</div><div class="what">Generators restarted, not started</div><div class="why">The generators restart instead of carrying load, so the site still has no working power.</div></li>
+        <li><div class="time">13:40</div><div class="what">Disaster-recovery failover decided</div><div class="why">Roughly two hours after impact, the decision is made to fail the control plane over to the DR cluster.</div></li>
+        <li class="ok"><div class="time">13:43</div><div class="what">First DR services live</div><div class="why">Three minutes after the decision. <strong>Throughout the entire event, the edge kept serving customer traffic.</strong></div></li>
+        <li class="ok"><div class="time">17:57</div><div class="what">Most of the control plane back</div><div class="why">6h 14m from first impact, the majority of control-plane services are restored.</div></li>
+        <li><div class="time">22:48</div><div class="what">Clean power restored</div><div class="why">Utility power is stable again — but the damaged data centre still has to be rebuilt.</div></li>
+        <li class="hot"><div class="time">NOV 3</div><div class="what">PDX-04 rebuilt, one server at a time</div><div class="why">Config management servers take about three hours; each remaining server takes ten minutes to two hours.</div></li>
+        <li class="ok"><div class="time">NOV 4 · 04:25</div><div class="what">Fully restored</div><div class="why">40h 42m after first impact, the control plane is finally whole.</div></li>
+      </ol>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft);font-size:13px;color:var(--muted);line-height:1.6">
+        <strong style="color:var(--ink-2)">"Code Orange":</strong> Cloudflare's long-term programme to stop the control plane
+        depending on its core data centres. The control plane must now work with <em>all</em> core DCs offline, general
+        availability requires a tested DR plan, and chaos testing includes full data-centre removal. Cloudflare's President
+        of Infrastructure wrote it plainly: <em>"Far too many of our services depend on the availability of our core
+        facilities."</em>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 06 RESOLUTIONS ============ -->
 <section id="resolved">
-  <div class="sec-head"><span class="num">05</span><h2>How each incident was actually resolved</h2></div>
+  <div class="sec-head"><span class="num">06</span><h2>How each incident was actually resolved</h2></div>
   <p class="sec-sub">
     The part most outage summaries skip. What actually fixed it, and what the provider changed so it can't happen again —
     all taken from the providers' own post-event summaries and post-incident reviews.
@@ -614,14 +728,15 @@ error_budget_minutes = (1 − composed) × 43,200
     <button class="tab on" data-p="aws"><i style="background:#f59e0b"></i>AWS</button>
     <button class="tab" data-p="azure"><i style="background:#3b82f6"></i>Azure</button>
     <button class="tab" data-p="gcp"><i style="background:#10b981"></i>Google Cloud</button>
+    <button class="tab" data-p="cf"><i style="background:#db2777"></i>Cloudflare</button>
   </div>
 
   <div id="incList"></div>
 </section>
 
-<!-- ============ 06 ROOT CAUSES ============ -->
+<!-- ============ 07 ROOT CAUSES ============ -->
 <section id="causes">
-  <div class="sec-head"><span class="num">06</span><h2>Why they fail</h2></div>
+  <div class="sec-head"><span class="num">07</span><h2>Why they fail</h2></div>
   <p class="sec-sub">
     This is the bit that should change your design priorities. <strong>55% of major outages start with a change or code</strong>,
     and only 18% with power or cooling — the hardware story is the minority case.
@@ -647,7 +762,8 @@ error_budget_minutes = (1 − composed) × 43,200
       <div style="margin-top:18px;padding-top:15px;border-top:1px solid var(--line-soft);font-size:12.8px;color:var(--muted);line-height:1.6">
         Two structural causes sit underneath all of these. <strong style="color:var(--ink-2)">Shared control planes</strong> turn a zone
         event into a region event. <strong style="color:var(--ink-2)">Failed automation</strong> turns a recoverable fault into an
-        incident needing a human.
+        incident needing a human. Cloudflare is the counter-example worth studying: it separated the plane that serves traffic from
+        the plane that configures it, so a 40-hour control-plane outage cost customers a dashboard rather than their traffic.
       </div>
     </div>
 
@@ -659,19 +775,22 @@ error_budget_minutes = (1 − composed) × 43,200
           <li style="padding:7px 0;border-bottom:1px solid var(--line-soft)">
             <strong style="color:var(--ink)">A change went wrong</strong> — an incomplete allow list published region-wide, a malformed
             certificate pushed to every zone at once, metadata written by two control-plane versions, a router upgrade during which a
-            technician unplugged every fiber path in 13 minutes.
+            technician unplugged every fiber path in 13 minutes, a Workers KV deploy tool that pointed production traffic at a
+            staging build.
           </li>
           <li style="padding:7px 0;border-bottom:1px solid var(--line-soft)">
             <strong style="color:var(--ink)">Automation had a latent path</strong> — DNS planner races, Kinesis cell management,
-            thundering-herd retry storms, expedited rollouts that skip validation, a PLC that sensed voltage upstream of its own breaker.
+            thundering-herd retry storms, expedited rollouts that skip validation, a PLC that sensed voltage upstream of its own breaker,
+            a routing-policy script that leaked peer routes, a broken sub-process in an Addressing API release.
           </li>
           <li style="padding:7px 0;border-bottom:1px solid var(--line-soft)">
             <strong style="color:var(--ink)">Physical infrastructure</strong> — lightning, transformers, arc flashes in power distribution
-            units, cooling water leaks, a third-party data centre fire.
+            units, cooling water leaks, a third-party data centre fire, a ground fault and a generator that restarted instead of starting.
           </li>
           <li style="padding:7px 0">
             <strong style="color:var(--ink)">Shared dependencies</strong> — one regional control plane serving every zone, one DNS
-            endpoint for a whole region, one global edge fleet behind one config pipeline.
+            endpoint for a whole region, one global edge fleet behind one config pipeline, and one third-party cloud quietly storing
+            part of someone else's product.
           </li>
         </ul>
       </div>
@@ -679,12 +798,13 @@ error_budget_minutes = (1 − composed) × 43,200
   </div>
 </section>
 
-<!-- ============ 07 SLA TABLE ============ -->
+<!-- ============ 08 SLA TABLE ============ -->
 <section id="sla">
-  <div class="sec-head"><span class="num">07</span><h2>The SLA maths: what the credit is actually worth</h2></div>
+  <div class="sec-head"><span class="num">08</span><h2>The SLA maths: what the credit is actually worth</h2></div>
   <p class="sec-sub">
-    All three providers promise 99.99% for multi-zone compute. That's a real commitment. The remedy attached to it is a percentage
-    of your bill — and that's where the maths gets uncomfortable.
+    All three hyperscalers promise 99.99% for multi-zone compute. That's a real commitment. The remedy attached to it is a percentage
+    of your bill — and that's where the maths gets uncomfortable. Cloudflare sells something quite different: a <strong>100% uptime
+    guarantee</strong> on a global network.
   </p>
 
   <div class="grid-2">
@@ -733,11 +853,51 @@ error_budget_minutes = (1 − composed) × 43,200
       </p>
     </div>
   </div>
+
+  <div class="panel" style="margin-top:20px">
+    <h3 style="font-size:15px;font-weight:600;margin-bottom:5px">Cloudflare's SLA is a different shape entirely</h3>
+    <p style="font-size:13.5px;color:var(--muted);margin-bottom:17px;max-width:88ch">
+      Cloudflare doesn't sell you 99.99%. Business and Enterprise plans carry a <strong>100% uptime guarantee</strong> — a
+      materially stronger promise than the hyperscalers' — with credits scaled by how much of your traffic was actually affected.
+    </p>
+    <div class="grid-2" style="gap:20px">
+      <div>
+        <div class="table-scroll">
+          <table style="min-width:430px">
+            <thead><tr><th>Plan</th><th>Commitment</th><th>Remedy</th></tr></thead>
+            <tbody>
+              <tr><td><span class="pill cf">CF</span> Business</td><td class="mono">100% uptime</td><td>Service credit against the monthly fee, pro-rated to the disruption and the affected-customer ratio</td></tr>
+              <tr><td><span class="pill cf">CF</span> Enterprise · Standard</td><td class="mono">100% uptime</td><td class="mono">10× credit vs. monthly fee</td></tr>
+              <tr><td><span class="pill cf">CF</span> Enterprise · Premium</td><td class="mono">100% uptime</td><td class="mono">25× reimbursement</td></tr>
+              <tr><td><span class="pill cf">CF</span> Free / Pro</td><td class="mono">none</td><td>No uptime SLA at all</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="callout">
+        <h3 style="font-size:15px">A stronger promise, a wider blast radius</h3>
+        <p>
+          A 100% uptime commitment is harder to breach than a 99.99% SLA — but Cloudflare's failures are usually global, and a
+          control-plane failure takes the dashboard and the API down with it even while the edge keeps serving traffic.
+        </p>
+        <p>
+          Credits are capped at <strong>six months of cumulative monthly fees</strong> per annual billing period, and a claim has
+          to be notified within <strong>five business days</strong> of the incident and filed before the end of the following
+          billing month. Miss that window and the strongest SLA in this dataset is worth nothing.
+        </p>
+        <p style="margin-top:12px;padding-top:12px;border-top:1px solid #f2d6d4">
+          The trade is explicit. Cloudflare gives you a better contract and a better-separated architecture, in exchange for a failure
+          that is either brief or worldwide — rather than the hyperscalers' failure, which is usually contained to one region and
+          lasts for hours.
+        </p>
+      </div>
+    </div>
+  </div>
 </section>
 
-<!-- ============ 08 PLAYBOOK ============ -->
+<!-- ============ 09 PLAYBOOK ============ -->
 <section id="playbook">
-  <div class="sec-head"><span class="num">08</span><h2>The playbook: turning this into an SLO practice</h2></div>
+  <div class="sec-head"><span class="num">09</span><h2>The playbook: turning this into an SLO practice</h2></div>
   <p class="sec-sub">
     What to actually measure, what to target, and what to do when the budget runs down. This is the operational translation
     of everything above.
@@ -794,6 +954,7 @@ error_budget_minutes = (1 − composed) × 43,200
         <li>Remove single-region dependencies: identity, DNS, secrets, CI/CD and your observability stack are all common ones.</li>
         <li>Failover automatically, with health-checked routing and safeguards so automation can't shed too much capacity at once — exactly the failure AWS hit in NLB.</li>
         <li>Test failover continuously, and test the shared dependencies your failover path relies on.</li>
+        <li>Keep the control plane and the data plane in separate failure domains. Cloudflare's edge kept serving traffic through a 40-hour control-plane outage — that separation is the cheapest resilience you can buy, and you already own both halves of it.</li>
       </ul>
     </div>
     <div class="dd dont">
@@ -805,14 +966,15 @@ error_budget_minutes = (1 − composed) × 43,200
         <li>Don't assume provider advice mid-incident is right. Microsoft's own East US 2 review called its failover advice "an inappropriate communication" — verify against your own user path.</li>
         <li>Don't let the backup snapshot be written by the same pipeline that protects it. Azure's LKG snapshot was corrupted by the very change it existed to roll back.</li>
         <li>Don't assume healthy replicas are spread across zones. GCP's Apigee had two of three datastore replicas in the zone that lost power, by scheduling misconfiguration.</li>
+        <li>Don't put a control plane inside the blast radius of your data plane. Azure Front Door's control-plane defect took the global edge down with it for eight hours — and Cloudflare's own "Code Orange" programme exists because their control plane depended on core data centres.</li>
       </ul>
     </div>
   </div>
 </section>
 
-<!-- ============ 09 LESSONS ============ -->
+<!-- ============ 10 LESSONS ============ -->
 <section id="lessons">
-  <div class="sec-head"><span class="num">09</span><h2>Four conclusions that come straight out of the data</h2></div>
+  <div class="sec-head"><span class="num">10</span><h2>Five conclusions that come straight out of the data</h2></div>
   <p class="sec-sub">These are the ones worth memorising before an interview or a design review.</p>
 
   <div class="panel">
@@ -855,13 +1017,28 @@ error_budget_minutes = (1 − composed) × 43,200
         budget, you should find out before the invoice and the SLA claim do. <strong>An SLO isn't a target, it's a decision procedure.</strong></p>
       </div>
     </div>
+    <div class="lesson">
+      <div class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="4"/></svg></div>
+      <div>
+        <h4>Separate the control plane from the data plane — and know which one you actually depend on</h4>
+        <p>In November 2023 Cloudflare lost a data centre and took its control plane down for <strong>40 hours 42 minutes</strong>
+        while the edge kept serving traffic for every one of them. That is the case for architectural separation. But Azure Front
+        Door shows the cost of coupling them: a control-plane metadata defect took the global edge down with it for eight hours.
+        <strong>Ask two questions of every dependency: where does its control plane live, and does my traffic actually stop when it
+        goes down?</strong> A dashboard outage is a bad afternoon. A data-plane outage is a company event.</p>
+      </div>
+    </div>
   </div>
 </section>
 
 <footer>
   <h4>Sources</h4>
   <ul>
-    <li><a href="https://controlplane.com/cloud-outage-tracker" target="_blank" rel="noopener">Control Plane Cloud Outage Tracker</a> — 62 major incidents since 2020</li>
+    <li><a href="https://controlplane.com/cloud-outage-tracker" target="_blank" rel="noopener">Control Plane Cloud Outage Tracker</a> — 62 major incidents since 2020 across four providers</li>
+    <li><a href="https://controlplane.com/blog/post/cloud-outage-report-2026" target="_blank" rel="noopener">Control Plane — The 2026 Cloud Outage Report</a> — provider medians, global-vs-regional split, causes by year</li>
+    <li><a href="https://blog.cloudflare.com/post-mortem-on-cloudflare-control-plane-and-analytics-outage" target="_blank" rel="noopener">Cloudflare post-mortem — Hillsboro control-plane outage, Nov 2023</a></li>
+    <li><a href="https://blog.cloudflare.com/tag/post-mortem/" target="_blank" rel="noopener">Cloudflare post-mortem index</a> — Nov 2025 Bot Management, Jun 2025 Workers KV, the R2 credential and gateway incidents</li>
+    <li><a href="https://www.cloudflare.com/enterprise-support-sla/" target="_blank" rel="noopener">Cloudflare Enterprise SLA</a> — 100% uptime, credit schedule and claim window</li>
     <li><a href="https://aws.amazon.com/premiumsupport/technology/pes/" target="_blank" rel="noopener">AWS Post-Event Summaries</a> — us-east-1 Oct 2025, Kinesis Jul 2024, Dec 2021</li>
     <li><a href="https://status.cloud.google.com/incidents.json" target="_blank" rel="noopener">Google Cloud Service Health incident reports</a></li>
     <li><a href="https://azure.status.microsoft/en-us/status/history/" target="_blank" rel="noopener">Azure post-incident reviews</a> — PLP3-1W8, YKYN-BWZ</li>
@@ -873,11 +1050,14 @@ error_budget_minutes = (1 − composed) × 43,200
     <li><a href="https://blog.incidenthub.cloud/definitive-aws-outage-report-2025-reliability" target="_blank" rel="noopener">IncidentHub — AWS outages 2025</a></li>
   </ul>
   <p class="note-txt">
-    Incident counts reflect what each provider publicly documents, not a head-to-head reliability ranking — Microsoft publishes
-    post-incident reviews for more incidents than the others, so Azure's 20 are the broadest selected, not all of them. Durations are
-    provider-stated worst-case service impact, not every customer's experience; where a provider's summary and timeline disagree, the
-    provider's timeline is used. The "error budget burned" figure divides each incident's duration by 4.32 minutes, the monthly downtime
-    allowance implied by a 99.99% SLA. The GCP zonal managed instance group figure is the documented 99.0% tier.
+    The tracker records 62 major incidents across four providers since January 2020: 14 at AWS, 20 at Azure, 12 at Google Cloud and
+    16 at Cloudflare. Incident counts reflect what each provider publicly documents, not a head-to-head reliability ranking —
+    Microsoft publishes post-incident reviews for more incidents than the others, so Azure's 20 are the broadest selected, not all of
+    them. Cloudflare's median duration of 1h 15m is short but its blast radius is usually global, so a short outage and a wide one
+    are not the same thing. Durations are provider-stated worst-case service impact, not every customer's experience; where a
+    provider's summary and timeline disagree, the provider's timeline is used. The "error budget burned" figure divides each incident's
+    duration by 4.32 minutes, the monthly downtime allowance implied by a 99.99% SLA. The GCP zonal managed instance group figure is
+    the documented 99.0% tier.
   </p>
   <div class="made">
     <span>Built by <a href="https://alamahmed.dev/">Alam Ahmed</a> with <a href="https://www.minimax.io">MiniMax Code</a></span>
@@ -888,8 +1068,9 @@ error_budget_minutes = (1 − composed) × 43,200
 </div>
 
 <script>
-const AWS = '#f59e0b', AZURE = '#3b82f6', GCP = '#10b981';
+const AWS = '#f59e0b', AZURE = '#3b82f6', GCP = '#10b981', CF = '#db2777';
 const INK = '#14161c', MUTED = '#737a89', LINE = 'rgba(0,0,0,.05)';
+const COLOR = {aws:AWS, azure:AZURE, gcp:GCP, cf:CF};
 
 Chart.defaults.font.family = "'Outfit', sans-serif";
 Chart.defaults.color = MUTED;
@@ -909,7 +1090,8 @@ new Chart(document.getElementById('freqChart'), {
     datasets:[
       {label:'AWS',   data:[1,5,0,1,1,2,4], backgroundColor:AWS,   borderRadius:6, maxBarThickness:24},
       {label:'Azure', data:[1,3,0,2,4,4,6], backgroundColor:AZURE, borderRadius:6, maxBarThickness:24},
-      {label:'Google Cloud', data:[1,1,1,1,2,2,4], backgroundColor:GCP, borderRadius:6, maxBarThickness:24}
+      {label:'Google Cloud', data:[1,1,1,1,2,2,4], backgroundColor:GCP, borderRadius:6, maxBarThickness:24},
+      {label:'Cloudflare', data:[1,0,1,2,0,8,4], backgroundColor:CF, borderRadius:6, maxBarThickness:24}
     ]
   },
   options:{
@@ -933,6 +1115,7 @@ new Chart(document.getElementById('freqChart'), {
 /* ================= 03 BURN CHART ================= */
 const BURN = [
   ['Jan 2025 · Azure East US 2','50h 13m',3013,'azure'],
+  ['Nov 2023 · Cloudflare Hillsboro OR (control plane)','40h 42m',2442,'cf'],
   ['Apr 2023 · GCP europe-west9 Paris','27h 14m',1634,'gcp'],
   ['Jul 2024 · Azure Central US','24h 20m',1460,'azure'],
   ['May 2026 · Azure West US 2','22h 06m',1326,'azure'],
@@ -942,31 +1125,44 @@ const BURN = [
   ['Nov 2020 · AWS Kinesis','17h 08m',1028,'aws'],
   ['Oct 2025 · AWS us-east-1','14h 32m',872,'aws'],
   ['Oct 2025 · AWS us-east-1','13h 43m',823,'aws'],
-  ['Dec 2021 · AWS us-east-1','11h 10m',670,'aws'],
   ['Oct 2024 · GCP europe-west3 Frankfurt','12h 39m',759,'gcp'],
   ['Oct 2026 · GCP us-central1','12h 30m',750,'gcp'],
+  ['Dec 2021 · AWS us-east-1','11h 10m',670,'aws'],
   ['Sep 2021 · AWS us-east-1 (1 AZ)','7h 34m',454,'aws'],
   ['Oct 2026 · GCP europe-west2 London','7h 52m',472,'gcp'],
-  ['Aug 2026 · GCP us-west1','2h 22m',142,'gcp'],
+  ['Feb 2026 · Cloudflare BYOIP','6h 07m',367,'cf'],
+  ['Nov 2025 · Cloudflare Bot Management','5h 46m',346,'cf'],
+  ['Aug 2025 · Cloudflare to AWS us-east-1','3h 51m',231,'cf'],
   ['Oct 2025 · Azure Front Door (global)','8h 24m',504,'azure'],
   ['Oct 2025 · Azure Front Door (global)','8h 10m',490,'azure'],
+  ['Oct 2026 · Cloudflare One (global)','3h 12m',192,'cf'],
   ['Feb 2026 · Azure multiple regions','6h 27m',387,'azure'],
+  ['Jun 2025 · Cloudflare Workers KV','2h 28m',148,'cf'],
   ['Jul 2024 · AWS us-east-1','6h 52m',412,'aws'],
+  ['Sep 2025 · Cloudflare control plane','1h 15m',75,'cf'],
+  ['Jun 2022 · Cloudflare BGP (19 DCs)','1h 15m',75,'cf'],
   ['Sep 2026 · GCP us-central1','4h 11m',251,'gcp'],
   ['Jul 2026 · Azure West US','4h 57m',297,'azure'],
   ['Jun 2023 · AWS us-east-1','3h 51m',231,'aws'],
-  ['Feb 2026 · GCP Vertex AI (global)','1h 58m',118,'gcp']
+  ['Mar 2025 · Cloudflare R2 credentials','1h 07m',67,'cf'],
+  ['Jul 2025 · Cloudflare 1.1.1.1','1h 02m',62,'cf'],
+  ['Feb 2025 · Cloudflare R2 Gateway','59m',59,'cf'],
+  ['Aug 2026 · GCP us-west1','2h 22m',142,'gcp'],
+  ['Feb 2026 · GCP Vertex AI (global)','1h 58m',118,'gcp'],
+  ['Oct 2023 · Cloudflare Workers KV staging','37m',37,'cf'],
+  ['Jul 2020 · Cloudflare Atlanta BGP','27m',27,'cf'],
+  ['Dec 2025 · Cloudflare WAF (global)','25m',25,'cf'],
+  ['Jan 2026 · Cloudflare Miami IPv6','25m',25,'cf']
 ].sort((a,b)=>b[2]-a[2]);
 
-const BURN_MIN = BURN.map(r=>r[2]);
-const BURN_MULT = BURN.map(r=>Math.round(r[2]/4.32));
-const BURN_COLOR = BURN.map(r=>r[3]==='aws'?AWS:r[3]==='azure'?AZURE:GCP);
+let BURN_VIEW = BURN;
+const BURN_COLOR = BURN.map(r=>COLOR[r[3]]);
 
-new Chart(document.getElementById('burnChart'), {
+const burnChart = new Chart(document.getElementById('burnChart'), {
   type:'bar',
   data:{
     labels:BURN.map(r=>r[0]+' · '+r[1]),
-    datasets:[{label:'× monthly budget', data:BURN_MULT, backgroundColor:BURN_COLOR, borderRadius:5, maxBarThickness:15}]
+    datasets:[{label:'× monthly budget', data:BURN.map(r=>Math.round(r[2]/4.32)), backgroundColor:BURN_COLOR, borderRadius:5, maxBarThickness:15}]
   },
   options:{
     indexAxis:'y',
@@ -977,29 +1173,48 @@ new Chart(document.getElementById('burnChart'), {
         title: items => items[0].label,
         label: item => {
           const i = item.dataIndex;
-          return ['Duration: '+BURN[i][1], 'Budget burned: '+BURN_MULT[i]+'× (4.32 min monthly)', 'Downtime: '+(BURN_MIN[i]/60).toFixed(1)+' h'];
+          return ['Duration: '+BURN_VIEW[i][1], 'Budget burned: '+Math.round(BURN_VIEW[i][2]/4.32)+'× (4.32 min monthly)', 'Downtime: '+(BURN_VIEW[i][2]/60).toFixed(1)+' h'];
         }
       }}
     },
     scales:{
       x:{beginAtZero:true, grid:{color:LINE}, border:{display:false}, ticks:{font:{size:11}},
          title:{display:true, text:'times the entire monthly 99.99% error budget was consumed', font:{size:11}, color:MUTED}},
-      y:{grid:{display:false}, border:{color:LINE}, ticks:{font:{size:10.5}, color:INK}}
+      y:{grid:{display:false}, border:{color:LINE}, ticks:{font:{size:10.5}, color:INK, autoSkip:false}}
     }
   }
 });
 
+function setBurnFilter(f){
+  BURN_VIEW = (f==='all') ? BURN : BURN.filter(r=>r[3]===f);
+  burnChart.data.labels = BURN_VIEW.map(r=>r[0]+' · '+r[1]);
+  burnChart.data.datasets[0].data = BURN_VIEW.map(r=>Math.round(r[2]/4.32));
+  burnChart.data.datasets[0].backgroundColor = BURN_VIEW.map(r=>COLOR[r[3]]);
+  const h = Math.max(250, Math.min(760, BURN_VIEW.length*20+50));
+  document.getElementById('burnWrap').style.height = h+'px';
+  burnChart.update();
+}
+document.querySelectorAll('#burnFilter button[data-f]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#burnFilter button[data-f]').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    setBurnFilter(btn.dataset.f);
+  });
+});
+setBurnFilter('all');
+
 /* ================= 03 CALCULATOR ================= */
 const DEPS = [
-  {id:'lb',  name:'Edge / load balancer', note:'routes every request', opts:['99.99','99.999']},
-  {id:'cpu', name:'Compute',              note:'runs the request',    opts:['99.5','99.9','99.95','99.99']},
-  {id:'db',  name:'Database',             note:'holds the state',    opts:['99.5','99.9','99.95','99.99']},
-  {id:'sto', name:'Object storage',       note:'holds the assets',   opts:['99.9','99.95','99.99']}
+  {id:'cdn', name:'CDN / edge (Cloudflare)', note:'sits in front of everything', opts:['99.99','99.999']},
+  {id:'lb',  name:'Edge / load balancer',    note:'routes every request',      opts:['99.99','99.999']},
+  {id:'cpu', name:'Compute',                 note:'runs the request',         opts:['99.5','99.9','99.95','99.99']},
+  {id:'db',  name:'Database',                note:'holds the state',          opts:['99.5','99.9','99.95','99.99']},
+  {id:'sto', name:'Object storage',          note:'holds the assets',         opts:['99.9','99.95','99.99']}
 ];
 const PRESETS = {
-  single: {lb:'99.99',  cpu:'99.5',  db:'99.5',  sto:'99.9'},
-  multi:  {lb:'99.99',  cpu:'99.99', db:'99.95', sto:'99.9'},
-  global: {lb:'99.999', cpu:'99.99', db:'99.99', sto:'99.99'}
+  single: {cdn:'99.99',  lb:'99.99',  cpu:'99.5',  db:'99.5',  sto:'99.9'},
+  multi:  {cdn:'99.99',  lb:'99.99',  cpu:'99.99', db:'99.95', sto:'99.9'},
+  global: {cdn:'99.999', lb:'99.999', cpu:'99.99', db:'99.99', sto:'99.99'}
 };
 let cur = Object.assign({}, PRESETS.multi);
 
@@ -1323,6 +1538,158 @@ gcp: [
       'Rollout processes reinforced to include mandatory validation checkpoints.',
       'Alerting improved to monitor critical dependencies more closely.',
       'A textbook rollback: identify the change, revert it, add capacity. Fourteen hours of outage avoided because the change was small and reversible.'
+    ]
+  }
+],
+cf: [
+  {
+    title:'A data centre went dark and the control plane took 40 hours to rebuild',
+    where:'Hillsboro, Oregon · control plane (dashboard, API, Logpush, Zero Trust)',
+    dur:'40h 42m', mins:2442,
+    cause:'The site hosting control-plane services that sat outside the high-availability cluster lost both utility feeds. Portland General Electric began maintenance on one feed at 08:50; at 11:40 a ground fault took out the other. The generators restarted instead of carrying load, so the site had no working power.',
+    impact:'Dashboard, API, Logpush, analytics, the Workers API and Zero Trust were unavailable for the best part of two days. <strong>The edge network kept serving customer traffic throughout</strong> — the control plane and the data plane had separate failure domains, and that separation held.',
+    resolution:[
+      '12:48 — generators restarted rather than started; the site still had no usable power.',
+      '13:40 — the disaster-recovery failover decision was taken, roughly two hours after impact.',
+      '13:43 — the first DR services were running, three minutes after the decision.',
+      '17:57 — most control-plane services were back: 6h 14m from first impact.',
+      '22:48 — clean utility power restored. The damaged data centre still had to be rebuilt.',
+      'Nov 3 — PDX-04 was rebuilt one server at a time: config management servers took about three hours, then ten minutes to two hours for each remaining server.',
+      'Nov 4, 04:25 — fully restored, 40h 42m after first impact.'
+    ],
+    prevention:[
+      'The "Code Orange" programme: remove core-data-centre dependencies from the control plane so it can run with <em>all</em> core facilities offline.',
+      '"No GA without HA" — general availability now requires a tested disaster-recovery plan, alongside blast-radius testing and chaos testing that includes full data-centre removal.',
+      'Every core facility is re-audited, and logging and analytics were given their own DR plan.',
+      'The transferable lesson: separation only pays if you practise it. Cloudflare decided to fail over at 13:40 and had services live three minutes later — that speed is what turned a 40-hour outage into a 40-hour <em>control-plane</em> outage.'
+    ]
+  },
+  {
+    title:'A broken sub-process withdrew 1,100 customer prefixes from the Internet',
+    where:'Global · BYOIP customers',
+    dur:'6h 07m', mins:367,
+    cause:'A release of Cloudflare\'s Addressing API contained a broken sub-process. When it ran, it withdrew roughly 1,100 customer BYOIP prefixes via BGP — prefixes those customers had brought onto Cloudflare\'s network themselves, and which Cloudflare was announcing for them.',
+    impact:'Customers using BYOIP lost their prefixes and with them their inbound routing for hours. The tracker records the event at 5h 07m; Cloudflare\'s own summary puts it at 6h 07m.',
+    resolution:[
+      'The withdrawn prefixes were re-announced, restoring inbound routing to the affected customers.',
+      'Customer-by-customer prefix restoration was required, because the mistake had touched a different set of prefixes for every BYOIP customer.'
+    ],
+    prevention:[
+      'The lesson is about where an API release is allowed to have blast radius: a change inside an addressing API reached BGP, and BGP reached the public internet.',
+      'The generalisable rule — validate the blast radius of a control-plane release before it ships, and keep prefix withdrawal behind a guard that can be stopped — applies to any automation that can announce routes.'
+    ]
+  },
+  {
+    title:'A database permission change doubled a file until the proxy panicked',
+    where:'Global · traffic-routing control plane',
+    dur:'5h 46m', mins:346,
+    cause:'A database permissions change altered how the Bot Management feature file was generated, roughly doubling its size past a hard size limit. The file is distributed to every proxy in the network, so when it arrived oversized the core proxy crashed on load.',
+    impact:'Core traffic was restored in 3h 10m, but the full event ran 5h 46m. Dashboard availability was degraded through two separate windows, and a login-retry thundering herd amplified the load.',
+    resolution:[
+      'Bot Management configuration generation was stopped, removing the oversized file from the distribution path.',
+      'A Workers KV patch was deployed to bypass the core proxy, restoring capacity for the KV path.',
+      'Control-plane concurrency was scaled out, restoring availability by around 15:30. Core traffic was back in 3h 10m; the event ran 5h 46m in total.'
+    ],
+    prevention:[
+      'The failed-open path — serving traffic without the core proxy — was proven during the incident and became a permanent capability rather than an emergency patch.',
+      'Configuration generation is decoupled from configuration distribution, so a bad artefact can no longer be pushed to every proxy at once.',
+      'The instructive part: a permissions change on a database nobody thinks of as user-facing took down traffic delivery for the whole network. <em>The change surface is always wider than the surface you think about.</em>'
+    ]
+  },
+  {
+    title:'One customer\'s surge saturated the links to AWS us-east-1',
+    where:'Links to AWS us-east-1',
+    dur:'3h 51m', mins:231,
+    cause:'One customer\'s request surge from AWS us-east-1 saturated Cloudflare\'s direct links to that region.',
+    impact:'Traffic to and from origins in AWS us-east-1 degraded. Core impact lasted 3h 11m, with lingering latency taking the total to 3h 51m.',
+    resolution:[
+      'The direct links to us-east-1 were restored to full capacity and traffic distribution was rebalanced across the remaining paths.'
+    ],
+    prevention:[
+      'The lesson is about concentration, not Cloudflare: a single origin region behind a global edge is still a single point of failure, however many edge locations the request passes through.',
+      'This is the clearest case in the dataset of an edge provider failing because its <em>customer</em> failed — and of the two providers sharing one failure domain.'
+    ]
+  },
+  {
+    title:'Gateway traffic issues when identity policies were evaluated',
+    where:'Global · Cloudflare One',
+    dur:'3h 12m', mins:192,
+    cause:'The status page attributes the incident to a Gateway traffic issue arising when identity policies were evaluated. No full post-mortem has been published for this event.',
+    impact:'A 3h 12m window of impact on Cloudflare One customers — a reminder that a short incident on a global control plane is still a global incident.',
+    resolution:[
+      'The incident was resolved within the status-page window and no detailed public timeline has been published.'
+    ],
+    prevention:[
+      'The honest caveat: for the most recent Cloudflare event in this dataset there is no published post-mortem, so there is nothing to learn from the provider\'s remediation — only from the blast radius.',
+      'It reinforces the pattern of this provider: short duration, global reach.'
+    ]
+  },
+  {
+    title:'Workers KV storage partly lived on somebody else\'s cloud',
+    where:'Global · Workers KV and everything built on it',
+    dur:'2h 28m', mins:148,
+    cause:'Part of the storage backend for Workers KV was hosted on a third-party cloud provider. When that provider had an outage, the storage underneath KV went down with it.',
+    impact:'Workers KV and the products built on it were affected. Cloudflare\'s Gateway failed closed rather than failing open, and different dashboard login types failed for different reasons. The v4 API was unaffected.',
+    resolution:[
+      'Workers KV storage was re-architected onto R2 — Cloudflare\'s own object storage — and the third-party provider was removed from the path.'
+    ],
+    prevention:[
+      'The dependency was removed entirely rather than made more reliable, which is the only fix for a dependency you do not control.',
+      'A concrete illustration of the "shared dependencies" bucket: the third-party provider was a failure domain Cloudflare had never modelled, and it was inside the blast radius of a product Cloudflare sells as its own.'
+    ]
+  },
+  {
+    title:'A BGP policy change with reordered terms withdrew critical prefixes',
+    where:'19 busiest data centres',
+    dur:'1h 15m', mins:75,
+    cause:'A BGP policy change with reordered terms withdrew critical prefixes in the newest data centre architecture.',
+    impact:'The 19 busiest data centres were affected — a reminder that the busiest locations are the ones whose prefixes matter most.',
+    resolution:[
+      'The routing policy was corrected and the withdrawn prefixes were re-announced.'
+    ],
+    prevention:[
+      'The pattern repeats from the 2020 Atlanta incident, where a one-line router configuration change leaked BGP routes: route-policy changes need the same review discipline as any other config change, and a term order is a semantic change.'
+    ]
+  },
+  {
+    title:'A credential rotation deleted the old keys before the new ones worked',
+    where:'Global · R2 and dependent services',
+    dur:'1h 07m', mins:67,
+    cause:'During a credential rotation, the new R2 credentials were issued to a development instance instead of production, and the old credentials were deleted.',
+    impact:'R2 reads and writes failed, along with the services that depend on them.',
+    resolution:[
+      'The correct credentials were reissued to production and the rotation was completed.'
+    ],
+    prevention:[
+      'The lesson is ordering: in a rotation, the new credential must be verified in the target environment before the old one is destroyed. Deleting first turns a rotation into an outage.'
+    ]
+  },
+  {
+    title:'Legacy service topology withdrew the 1.1.1.1 prefixes',
+    where:'Global · 1.1.1.1 resolver and Gateway DNS',
+    dur:'1h 02m', mins:62,
+    cause:'A misconfiguration in legacy service-topology systems withdrew the 1.1.1.1 prefixes from the Internet.',
+    impact:'The 1.1.1.1 public DNS resolver was unreachable from the internet for about an hour, along with Gateway DNS.',
+    resolution:[
+      'The prefixes were re-announced, restoring the resolver for users worldwide.'
+    ],
+    prevention:[
+      'The word doing the work here is <em>legacy</em>: the failure came from old service-topology systems that were still able to announce for modern services, and nothing in the change path tested that assumption.',
+      'Consistent with the dataset as a whole — 55% of major outages start with a change or a piece of code, and the oldest code is usually the least guarded.'
+    ]
+  },
+  {
+    title:'A WAF mitigation for a React CVE hit a nil-value bug in the old proxy',
+    where:'Global · roughly 28% of HTTP traffic',
+    dur:'25m', mins:25,
+    cause:'A change to the Web Application Firewall, made to mitigate a React vulnerability, hit a nil-value bug in the Lua code path used by older proxy builds.',
+    impact:'About 28% of HTTP traffic was affected — the same global blast radius as the multi-hour outages in this dataset, at a quarter of the duration.',
+    resolution:[
+      'The WAF change was reverted and traffic returned to normal within the 25-minute window.'
+    ],
+    prevention:[
+      'The same global reach as a five-hour outage, in a quarter of the time. Duration is not the same thing as severity — a 25-minute event that hits a quarter of the internet is still an event you get paged for.',
+      'The bug was in the <em>older</em> proxy builds, which is the detail worth remembering: the mitigation for a current vulnerability hit the oldest code in the fleet.'
     ]
   }
 ]};
